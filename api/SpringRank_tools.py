@@ -55,24 +55,19 @@ def csr_SpringRank(A):
 
 def SpringRank(A,alpha=0.,l0=1.0,l1=1.0,solver='bicgstab',verbose=False):
     N = A.shape[0]
-    k_in = np.sum(A,0)
-    k_out = np.sum(A,1)
-    One = np.ones(N)
+    k_in = np.sum(A, 0)
+    k_out = np.sum(A, 1)
 
     C= A+A.T
-    D1 = np.zeros(A.shape)
-    D2 = np.zeros(A.shape)
-
-    for i in range(A.shape[0]):
-        D1[i,i]=k_out[i,0]+k_in[0,i]
-        D2[i,i]=l1*(k_out[i,0]-k_in[0,i])
+    D1 = np.diag(k_out + k_in)
+    d2 = k_out - k_in
 
     if alpha!=0.: 
         if verbose==True:print('Using alpha!=0: matrix is invertible')
 
-        B=One*alpha*l0+np.dot(D2,One)
-        A=alpha*np.eye(N)+D1-C
-        A=scipy.sparse.csr_matrix(np.matrix(A))
+        B = alpha*l0 + d2
+        A = alpha*np.eye(N)+ D1 - C
+        A = scipy.sparse.csr_matrix(np.matrix(A))
 
         if solver=='spsolve':
             if verbose==True:print('Using scipy.sparse.linalg.spsolve(A,B)')
@@ -91,10 +86,8 @@ def SpringRank(A,alpha=0.,l0=1.0,l1=1.0,solver='bicgstab',verbose=False):
         if verbose==True:print('alpha=0, using faster computation: fixing a rank degree of freedom')
         
         C= C+np.repeat(A[N-1,:][None],N,axis=0)+np.repeat(A[:,N-1].T[None],N,axis=0)
-        D3 = np.zeros(A.shape)
-        for i in range(A.shape[0]):D3[i,i]=l1*(k_out[N-1,0]-k_in[0,N-1])
-
-        B=np.dot(D2,One)+np.dot(D3,One)
+        d3 = np.full((N,), k_out[N-1] - k_in[N-1])
+        B = d2 + d3
         # A=D1-C
         A=scipy.sparse.csr_matrix(np.matrix(D1-C))
         if solver=='spsolve':
