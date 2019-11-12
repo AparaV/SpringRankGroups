@@ -1,5 +1,6 @@
 import networkx as nx
 import numpy as np
+from scipy import sparse as sp
 from scipy.sparse import coo_matrix,spdiags,csr_matrix
 import scipy.sparse.linalg
 
@@ -100,10 +101,68 @@ def SpringRank(A,alpha=0.,l0=1.0,l1=1.0,solver='bicgstab',verbose=False):
             print('Using scipy.sparse.linalg.bicgstab(A,B)')
             rank=scipy.sparse.linalg.bicgstab(A,B)[0]
         return np.transpose(rank)
-        
+
+
+def SpringRank_groups(A, G, lambda_s, lambda_theta, solver='bicgstab'):
+
+    # Get array shapes
+    k = G.shape[1]
+    N, M = A.shape
+    assert(N == M)
+    
+    # Construct Laplacian
+    k_in = np.sum(A, 0)
+    k_out = np.sum(A, 1)
+    D = np.diag(k_out + k_in)
+    L = D - (A + A.T)
+    
+    # Make everything sparse
+    L = csr_matrix(L)
+    G = csr_matrix(G)
+    I_n = sp.eye(N)
+    I_k = sp.eye(k)
+    
+    # Construct the LHS matrix
+    block_1 = L + lamb_s*I_n
+    block_2 = L @ G
+    block_3 = G.T @ L
+    block_4 = G.T @ block_2 + lamb_theta*I_k
+    top = sp.hstack([block_1, block_2])
+    bot = sp.hstack([block_3, block_4])
+    K = sp.vstack([top, bot])
+    
+    # Construct RHS vector (dense)
+    d_top = k_out - k_in
+    d_bot = np.matmul(G.T.toarray(), d_top)
+    d_hat = np.append(d_top, d_bot, axis=0)
+    
+    # Solve using sparse or iterative solvers
+    if solver == 'spsolve':
+        x = scipy.sparse.linalg.spsolve(K, d_hat)
+    elif solver == 'bicgstab':
+        output = scipy.sparse.linalg.bicgstab(K, d_hat)
+        x = output[0]
+    elif solver == 'lsqr':
+        output = scipy.sparse.linalg.lsqr(K, d_hat)
+        x = output[0]
+    else:
+        output = scipy.sparse.linalg.bicgstab(K, d_hat)
+        x = output[0]
+    
+    # Make x dense
+    try:
+        x = x.toarray()
+    except AttributeError:
+        pass
+    
+    ranks = {}
+    ranks["individual_scores"] = x[:N]
+    ranks["group_penalties"] = x[N:]
+    
+    return ranks
 
        
-def SpringRank_planted_network(N,beta,alpha,K,prng,l0=0.5,l1=1.):
+def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1.):
     '''
 
     Uses the SpringRank generative model to build a directed, possibly weigthed and having self-loops, network.
@@ -150,4 +209,74 @@ def SpringRank_planted_network(N,beta,alpha,K,prng,l0=0.5,l1=1.):
 
             if A_ij>0:G.add_edge(i,j,weight=A_ij)
 
-    return G        
+    return G   
+
+def SpringRank_planted_network_groups(N, num_groups, beta, alpha, alpha_g, K, prng, l0=0.5, l0_g=0, l1=1,
+                                      allow_self_loops=False, return_ranks=False):
+    """
+    Uses SpringRank generative model to build a directed, weighted network assuming group preferences.
+    
+    1. Randomly assign groups
+    2. Generate scores assuming a normal distribution
+    3. Generate network as described by the SpringRank generative model
+    
+    Arguments:
+        N: Number of nodes
+        num_groups: Number of groups
+        beta: Inverse temperature
+        alpha: Controls individual scores' variance
+        alpha_g: Controls group preferences' variance
+        K: Average degree
+        prng: Random number generator
+        l0: Individual scores' mean
+        l0: Group preferences' mean
+        l1: Spring rest length
+        allow_self_loops: Allow self loops in network. Defaults to False
+        return_ranks: Should we return the generated ranks. Defaults to False
+    
+    Output:
+        A: nx.DiGraph()
+        G: Assigned group matrix
+        s: Generated individual scores
+        theta: Generated group preferences
+        ranks: Generated total ranks
+    """
+    
+    # Assign groups and generate scores
+    groups = np.random.randint(0, num_groups, N)
+    G = np.zeros((N, num_groups))
+    for i, g_i in enumerate(groups):
+        G[i, g_i] = 1    
+    s = prng.normal(l0, 1./np.sqrt(alpha*beta), N)    
+    theta = np.random.normal(l0_g,  1./np.sqrt(alpha_g*beta), num_groups)
+    ranks = s + np.matmul(G, theta)
+    
+    # Fix sparsity using the average degree
+    scaled_exp_energy = np.zeros((N, N))
+    Z = 0
+    for i in range(N):
+        for j in range(N):
+            energy_ij = 0.5 * np.power(ranks[i]-ranks[j]-l1, 2)
+            scaled_exp_energy[i, j] = np.exp(-beta * energy_ij)
+            Z += scaled_exp_energy[i, j]
+    c = float(K * N) / Z
+    
+    # Build network
+    A = nx.DiGraph()
+    for i in range(N):
+        A.add_node(i, score=ranks[i])
+    
+    for i in range(N):
+        for j in range(N):
+            if i == j and not allow_self_loops:
+                continue
+
+            lambda_ij = c * scaled_exp_energy[i, j]
+            A_ij = np.random.poisson(lambda_ij)
+            if A_ij > 0:
+                A.add_edge(i,j,weight=A_ij)
+    
+    if return_ranks:
+        return A, G, s, theta, ranks
+    else:
+        return A, G     

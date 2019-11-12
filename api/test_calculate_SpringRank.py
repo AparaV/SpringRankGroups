@@ -25,7 +25,7 @@ G=tl.build_graph_from_adjacency(inadjacency)
 
 nodes=list(G.nodes())			#  determines the order of the entries of matrix A
 
-A=nx.to_numpy_matrix(G,nodelist=nodes)
+A= np.array(nx.to_numpy_matrix(G,nodelist=nodes))
 
 
 '''
