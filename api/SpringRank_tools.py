@@ -103,10 +103,24 @@ def SpringRank(A,alpha=0.,l0=1.0,l1=1.0,solver='bicgstab',verbose=False):
         return np.transpose(rank)
 
 
-def SpringRank_groups(A, G, lambda_s, lambda_theta, solver='bicgstab'):
+def SpringRank_groups(A, G, reg_coeff, solver):
+    """
+    Solve SpringRank with groups
 
+    Arguments:
+        A: The directed network (np.ndarray)
+        G: Dictionary of the group assignment matrices
+        reg_coeff: Dictionary of regularization coeffecients.
+            Expects same keys as `G` and an additional "individual" key.
+        solver: The sparse solver to be used
+
+    Output:
+        ranks: Final combined ranks (np.ndarray)
+        scores: Dictionary of scores, sorted by groups.
+            Has same keys as `G` and an additional "individual" key.
+    """
+    
     # Get array shapes
-    k = G.shape[1]
     N, M = A.shape
     assert(N == M)
     
@@ -118,23 +132,39 @@ def SpringRank_groups(A, G, lambda_s, lambda_theta, solver='bicgstab'):
     
     # Make everything sparse
     L = csr_matrix(L)
-    G = csr_matrix(G)
-    I_n = sp.eye(N)
-    I_k = sp.eye(k)
+    num_groups = {}
+    G_sparse = {}
+    for group_type, G_i in G.items():
+        num_groups[group_type] = G_i.shape[1]
+        G_sparse[group_type] = csr_matrix(G_i)
     
-    # Construct the LHS matrix
-    block_1 = L + lamb_s*I_n
-    block_2 = L @ G
-    block_3 = G.T @ L
-    block_4 = G.T @ block_2 + lamb_theta*I_k
-    top = sp.hstack([block_1, block_2])
-    bot = sp.hstack([block_3, block_4])
-    K = sp.vstack([top, bot])
+    # Construct the LHS matrix (sparse) and RHS vector (dense)
+    blocks = {}
+    for group_type, G_i in G.items():
+        blocks[group_type] = L @ G_i
     
-    # Construct RHS vector (dense)
-    d_top = k_out - k_in
-    d_bot = np.matmul(G.T.toarray(), d_top)
-    d_hat = np.append(d_top, d_bot, axis=0)
+    K = L + reg_coeff["individual"] * sp.eye(N)
+    for group_type in G:
+        K = sp.hstack([K, blocks[group_type]])
+    k_diff = k_out - k_in
+    d_hat = k_diff
+    
+    for group_type, lambda_i in reg_coeff.items():
+        if group_type == "individual":
+            continue
+        G_i_sparse = G_sparse[group_type]
+        G_i = G[group_type]
+        n_i = num_groups[group_type]
+        current_row = G_i_sparse.T @ L
+        for block_type, block in blocks.items():
+            if block_type == group_type:
+                current_row = sp.hstack([current_row, G_i_sparse.T @ block + lambda_i*sp.eye(n_i)])
+            else:
+                 current_row = sp.hstack([current_row, G_i_sparse.T @ block])
+        K = sp.vstack([K, current_row])
+        
+        d_i = np.matmul(G_i.T, k_diff)
+        d_hat = np.append(d_hat, d_i, axis=0)
     
     # Solve using sparse or iterative solvers
     if solver == 'spsolve':
@@ -155,11 +185,17 @@ def SpringRank_groups(A, G, lambda_s, lambda_theta, solver='bicgstab'):
     except AttributeError:
         pass
     
-    ranks = {}
-    ranks["individual_scores"] = x[:N]
-    ranks["group_penalties"] = x[N:]
+    # Rearrange scores and compute ranks
+    scores = {}
+    scores["individual"] = x[:N]
+    ranks = scores["individual"]
+    prev_idx = N
+    for group_type, n_i in num_groups.items():
+        scores[group_type] = x[prev_idx:prev_idx + n_i]
+        ranks += np.matmul(G[group_type], scores[group_type])
+        prev_idx += n_i
     
-    return ranks
+    return ranks, scores
 
        
 def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1.):
@@ -209,9 +245,9 @@ def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1.):
 
             if A_ij>0:G.add_edge(i,j,weight=A_ij)
 
-    return G   
+    return G
 
-def SpringRank_planted_network_groups(N, num_groups, beta, alpha, alpha_g, K, prng, l0=0.5, l0_g=0, l1=1,
+def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.5, l0_g=0, l1=1,
                                       allow_self_loops=False, return_ranks=False):
     """
     Uses SpringRank generative model to build a directed, weighted network assuming group preferences.
@@ -222,34 +258,53 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, alpha_g, K, pr
     
     Arguments:
         N: Number of nodes
-        num_groups: Number of groups
+        num_groups: Dictionary of different group sizes
         beta: Inverse temperature
-        alpha: Controls individual scores' variance
-        alpha_g: Controls group preferences' variance
+        alpha: Dictionary controlling individual and group scores' variance.
+            Expects same keys as `num_groups` and an additional "individual" key.
         K: Average degree
         prng: Random number generator
-        l0: Individual scores' mean
-        l0: Group preferences' mean
+        l0: Dictionary of individual and group scores' mean
+            Expects same keys as `num_groups` and an additional "individual" key.
         l1: Spring rest length
         allow_self_loops: Allow self loops in network. Defaults to False
         return_ranks: Should we return the generated ranks. Defaults to False
     
     Output:
         A: nx.DiGraph()
-        G: Assigned group matrix
-        s: Generated individual scores
-        theta: Generated group preferences
+        G: Dictionary of assigned group matrix
+        scores: Dictionary of individual and group scores
         ranks: Generated total ranks
     """
     
     # Assign groups and generate scores
-    groups = np.random.randint(0, num_groups, N)
-    G = np.zeros((N, num_groups))
-    for i, g_i in enumerate(groups):
-        G[i, g_i] = 1    
-    s = prng.normal(l0, 1./np.sqrt(alpha*beta), N)    
-    theta = np.random.normal(l0_g,  1./np.sqrt(alpha_g*beta), num_groups)
-    ranks = s + np.matmul(G, theta)
+
+    scores = {}
+    G = {}
+
+    alpha_i = alpha["individual"]
+    l0_i = l0["individual"]
+    scores["individual"] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), N)
+
+    ranks = scores["individual"]
+
+    for group_type in num_groups:
+
+        # generate groups
+        n_i = num_groups[group_type]
+        groups_i = np.random.randint(0, n_i, N)
+        G_i = np.zeros((N, n_i))
+        for j, g_j in enumerate(groups_i):
+            G_i[j, g_j] = 1
+        G[group_type] = G_i
+        
+        # generate scores
+        alpha_i = alpha[group_type]
+        l0_i = l0[group_type]
+        scores[group_type] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), n_i)
+
+        # compute rank
+        ranks += np.matmul(G_i, scores[group_type])
     
     # Fix sparsity using the average degree
     scaled_exp_energy = np.zeros((N, N))
@@ -277,6 +332,6 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, alpha_g, K, pr
                 A.add_edge(i,j,weight=A_ij)
     
     if return_ranks:
-        return A, G, s, theta, ranks
+        return A, G, scores, ranks
     else:
         return A, G     
