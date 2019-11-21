@@ -61,7 +61,7 @@ def scale_ranks(ranks, matrix, p_ij, interval):
     print(temperature)
     return ranks * temperature
 
-def shift_ranks(ranks, least_rank):
+def shift_ranks(ranks, least_rank=0):
     """
     Shifts all ranks so that the minimum is the least_rank
     """

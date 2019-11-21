@@ -14,36 +14,30 @@ def csr_SpringRank(A):
     Default parameters are initialized as in the standard SpringRank model
     
     INPUT:
-
         A=network adjacency matrix (can be weighted)
-        alpha: controls the impact of the regularization term
-        l0: regularization spring's rest length
-        l1: interaction springs' rest length
-        solver: linear system solver. Options: 'spsolve'(direct, slower) or 'bicgstab' (iterative, faster)
-        verbose: if True, then outputs some info about the numerical solvers
 
     OUTPUT:
-        
         rank: N-dim array, indeces represent the nodes' indices used in ordering the matrix A
-
     """
+
     N = A.shape[0]
     k_in = A.sum(axis=0)
     k_out = A.sum(axis=1).transpose()
+    
     # form the graph laplacian
     operator = csr_matrix(
         spdiags(k_out+k_in,0,N,N)-A-A.transpose()
         )
+    
     # form the operator A (from Ax=b notation)
     # note that this is the operator in the paper, but augmented
-    # to solve a Lagrange multiplier problem that provides the constrain
+    # to solve a Lagrange multiplier problem that provides the constraint
     operator.resize((N+1,N+1))
-    # print(operator.shape)
     operator[N,0] = 1
     operator[0,N] = 1
 
     # form the solution vector b (from Ax=b notation)
-    solution_vector = np.append((k_out-k_in),np.matrix(0),axis=1).transpose()
+    solution_vector = np.append((k_out-k_in), np.array([0])).transpose()
 
     # perform the computations
     ranks = scipy.sparse.linalg.bicgstab(
@@ -54,53 +48,37 @@ def csr_SpringRank(A):
     return ranks
 
 
-def SpringRank(A,alpha=0.,l0=1.0,l1=1.0,solver='bicgstab',verbose=False):
-    N = A.shape[0]
-    k_in = np.sum(A, 0)
-    k_out = np.sum(A, 1)
+def SpringRank(A, alpha=0):
+    """
+    Solve the SpringRank system.
+    If alpha = 0, solves a Lagrange multiplier problem.
+    Otherwise, performs L2 regularization to make full rank.
 
-    C= A+A.T
-    D1 = np.diag(k_out + k_in)
-    d2 = k_out - k_in
+    Arguments:
+        A: Directed network (np.ndarray)
+        alpha: regularization term. Defaults to 0.
 
-    if alpha!=0.: 
-        if verbose==True:print('Using alpha!=0: matrix is invertible')
+    Output:
+        ranks: Solution to SpringRank
+    """
 
-        B = alpha*l0 + d2
-        A = alpha*np.eye(N)+ D1 - C
+    if alpha == 0:
+        rank = csr_SpringRank(A)
+
+    else:
+        N = A.shape[0]
+        k_in = np.sum(A, 0)
+        k_out = np.sum(A, 1)
+
+        C = A + A.T
+        D1 = np.diag(k_out + k_in)
+        d2 = k_out - k_in
+        B = alpha + d2
+        A = alpha*np.eye(N) + D1 - C
         A = scipy.sparse.csr_matrix(np.matrix(A))
-
-        if solver=='spsolve':
-            if verbose==True:print('Using scipy.sparse.linalg.spsolve(A,B)')
-            rank = scipy.sparse.linalg.spsolve(A,B)
-            # rank=np.linalg.solve(A,B)  # cannot use it with sparse matrices
-            return np.transpose(rank)
-        elif solver=='bicgstab': 
-            if verbose==True:print('Using scipy.sparse.linalg.bicgstab(A,B)')
-            rank=scipy.sparse.linalg.bicgstab(A,B)[0]
-            return np.transpose(rank)
-        else:
-            print('Using scipy.sparse.linalg.bicgstab(A,B)')
-            rank=scipy.sparse.linalg.bicgstab(A,B)[0]   
-
-    else:    
-        if verbose==True:print('alpha=0, using faster computation: fixing a rank degree of freedom')
-        
-        C= C+np.repeat(A[N-1,:][None],N,axis=0)+np.repeat(A[:,N-1].T[None],N,axis=0)
-        d3 = np.full((N,), k_out[N-1] - k_in[N-1])
-        B = d2 + d3
-        # A=D1-C
-        A=scipy.sparse.csr_matrix(np.matrix(D1-C))
-        if solver=='spsolve':
-            if verbose==True:print('Using scipy.sparse.linalg.spsolve(A,B)')
-            rank = scipy.sparse.linalg.spsolve(A,B)
-        elif solver=='bicgstab': 
-            if verbose==True:print('Using scipy.sparse.linalg.bicgstab(A,B)')
-            rank=scipy.sparse.linalg.bicgstab(A,B)[0]
-        else:
-            print('Using scipy.sparse.linalg.bicgstab(A,B)')
-            rank=scipy.sparse.linalg.bicgstab(A,B)[0]
-        return np.transpose(rank)
+        rank = scipy.sparse.linalg.bicgstab(A, B)[0] 
+    
+    return np.transpose(rank)
 
 
 def SpringRank_groups(A, G, reg_coeff, solver):
@@ -198,7 +176,7 @@ def SpringRank_groups(A, G, reg_coeff, solver):
     return ranks, scores
 
        
-def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1.):
+def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1., return_ranks=False):
     '''
 
     Uses the SpringRank generative model to build a directed, possibly weigthed and having self-loops, network.
@@ -245,7 +223,10 @@ def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1.):
 
             if A_ij>0:G.add_edge(i,j,weight=A_ij)
 
-    return G
+    if return_ranks:
+        return G, scores
+    else:
+        return G
 
 def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.5, l0_g=0, l1=1,
                                       allow_self_loops=False, return_ranks=False):
