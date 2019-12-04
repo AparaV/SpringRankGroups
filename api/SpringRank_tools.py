@@ -64,6 +64,7 @@ def SpringRank(A, alpha=0):
 
     if alpha == 0:
         rank = csr_SpringRank(A)
+        rank = rank[:-1]
 
     else:
         N = A.shape[0]
@@ -166,7 +167,7 @@ def SpringRank_groups(A, G, reg_coeff, solver):
     # Rearrange scores and compute ranks
     scores = {}
     scores["individual"] = x[:N]
-    ranks = scores["individual"]
+    ranks = np.copy(scores["individual"])
     prev_idx = N
     for group_type, n_i in num_groups.items():
         scores[group_type] = x[prev_idx:prev_idx + n_i]
@@ -228,7 +229,7 @@ def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1., return_ra
     else:
         return G
 
-def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.5, l0_g=0, l1=1,
+def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.5, l1=1,
                                       allow_self_loops=False, return_ranks=False):
     """
     Uses SpringRank generative model to build a directed, weighted network assuming group preferences.
@@ -266,8 +267,9 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.
     alpha_i = alpha["individual"]
     l0_i = l0["individual"]
     scores["individual"] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), N)
+    print(l0_i, 1/np.sqrt(alpha_i*beta))
 
-    ranks = scores["individual"]
+    ranks = np.copy(scores["individual"])
 
     for group_type in num_groups:
 
@@ -283,6 +285,7 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.
         alpha_i = alpha[group_type]
         l0_i = l0[group_type]
         scores[group_type] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), n_i)
+        print(l0_i, 1/np.sqrt(alpha_i*beta))
 
         # compute rank
         ranks += np.matmul(G_i, scores[group_type])

@@ -58,7 +58,6 @@ def scale_ranks(ranks, matrix, p_ij, interval):
     Scale the ranks given p_ij
     """
     temperature = get_temperature(ranks, matrix, p_ij, interval)
-    print(temperature)
     return ranks * temperature
 
 def shift_ranks(ranks, least_rank=0):
