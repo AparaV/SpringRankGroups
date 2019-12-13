@@ -45,7 +45,7 @@ def csr_SpringRank(A):
         solution_vector
         )[0]
 
-    return ranks
+    return ranks[:-1]
 
 
 def SpringRank(A, alpha=0):
@@ -64,7 +64,6 @@ def SpringRank(A, alpha=0):
 
     if alpha == 0:
         rank = csr_SpringRank(A)
-        rank = rank[:-1]
 
     else:
         N = A.shape[0]
@@ -188,7 +187,6 @@ def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1., return_ra
         2. Extracts A_ij entries (network edges) from Poisson distribution with average related to SpringRank energy
 
     INPUT:
-
         N=# of nodes
         beta= inverse temperature, controls noise
         alpha=controls prior's variance
