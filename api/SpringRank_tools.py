@@ -21,8 +21,8 @@ def csr_SpringRank(A):
     """
 
     N = A.shape[0]
-    k_in = A.sum(axis=0)
-    k_out = A.sum(axis=1).transpose()
+    k_in = np.array(A.sum(axis=0))
+    k_out = np.array(A.sum(axis=1).transpose())
     
     # form the graph laplacian
     operator = csr_matrix(
@@ -176,10 +176,10 @@ def SpringRank_groups(A, G, reg_coeff, solver):
     return ranks, scores
 
        
-def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1., return_ranks=False):
+def SpringRank_planted_network(N, beta, alpha, K, l0=0.5, l1=1., return_ranks=False):
     '''
 
-    Uses the SpringRank generative model to build a directed, possibly weigthed and having self-loops, network.
+    Uses the SpringRank generative model to build a directed network.
     Can be used to generate benchmarks for hierarchical networks
 
     Steps:
@@ -195,37 +195,32 @@ def SpringRank_planted_network(N, beta, alpha, K, prng, l0=0.5, l1=1., return_ra
         l1=interaction spring's rest lenght
 
     OUTPUT:
-        G: nx.DiGraph()         Directed (possibly weighted graph, there can be self-loops)
-        
+        A: Directed network (np.ndarray)
     '''
-    G=nx.DiGraph()
 
-    scores=prng.normal(l0,1./np.sqrt(alpha*beta),N)  # planted scores ---> uses factorized Gaussian
-    for i in range(N):G.add_node(i,score=scores[i])
+    variance = 1 / np.sqrt(alpha * beta)
+    ranks = np.random.normal(l0, variance, N)
 
-    #  ---- Fixing sparsity i.e. the average degree  ---- 
-    Z=0.
-    for i in range(N):
-        for j in range(N):  
-            Z+=np.exp(-0.5*beta*np.power(scores[i]-scores[j]-l1,2))
-    c=float(K*N)/Z        
-    #  --------------------------------------------------
-
-    # ----  Building the graph   ------------------------ 
+    Z = 0
+    scaled_energy = np.zeros((N, N))
     for i in range(N):
         for j in range(N):
+            energy_ij = 0.5 * np.power(ranks[i] - ranks[j] - l1, 2)
+            scaled_energy[i, j] =  np.exp(-beta * energy_ij)
+            Z += scaled_energy[i, j]
+    c = K*N / Z
 
-            H_ij=0.5*np.power((scores[i]-scores[j]-l1),2)
-            lambda_ij=c*np.exp(-beta*H_ij)
-
-            A_ij=prng.poisson(lambda_ij,1)[0]
-
-            if A_ij>0:G.add_edge(i,j,weight=A_ij)
+    A = np.zeros((N, N))
+    for i in range(N):
+        for j in range(N):
+            if i == j:
+                continue
+            A[i, j] = np.random.poisson(c * scaled_energy[i, j])
 
     if return_ranks:
-        return G, scores
+        return A, ranks
     else:
-        return G
+        return A
 
 def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.5, l1=1,
                                       allow_self_loops=False, return_ranks=False):
