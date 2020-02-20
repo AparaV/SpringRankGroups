@@ -260,7 +260,6 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.
     alpha_i = alpha["individual"]
     l0_i = l0["individual"]
     scores["individual"] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), N)
-    print(l0_i, 1/np.sqrt(alpha_i*beta))
 
     ranks = np.copy(scores["individual"])
 
@@ -278,7 +277,6 @@ def SpringRank_planted_network_groups(N, num_groups, beta, alpha, K, prng, l0=0.
         alpha_i = alpha[group_type]
         l0_i = l0[group_type]
         scores[group_type] = prng.normal(l0_i, 1/np.sqrt(alpha_i*beta), n_i)
-        print(l0_i, 1/np.sqrt(alpha_i*beta))
 
         # compute rank
         ranks += np.matmul(G_i, scores[group_type])
