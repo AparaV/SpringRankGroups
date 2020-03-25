@@ -4,6 +4,25 @@ import numpy as np
 from scipy.optimize import brentq
 from numba import jit
 
+def laplacian(A, return_degree_difference=True):
+    """
+    Construct laplacian of the directed network A
+    Also returns difference in out and in degrees if return_degree_difference=True
+    """
+    N = A.shape[0]
+    k_in = np.sum(A, 0)
+    k_out = np.sum(A, 1)
+
+    C = A + A.T
+    D = np.diag(k_out + k_in)
+    
+    L = D - C
+    
+    if return_degree_difference:
+        d = k_out - k_in
+        return L, d
+    return L
+
 def build_graph_from_adjacency(inadjacency):
     """
     Takes an adjacency_list like: "23 41 18" or 18 times  "23 41 1"   (edge from 23 --> 41)
@@ -53,7 +72,7 @@ def adjust_ranks(ranks, matrix, least_rank=0, p_ij=0.8, interval=(0.01, 20)):
     ranks = shift_ranks(ranks, least_rank)
     return ranks
 
-def scale_ranks(ranks, matrix, p_ij, interval):
+def scale_ranks(ranks, matrix, p_ij, interval=(0.01, 20)):
     """
     Scale the ranks given p_ij
     """
@@ -67,7 +86,7 @@ def shift_ranks(ranks, least_rank=0):
     offset = np.min(ranks) - least_rank
     return ranks - offset
 
-def get_temperature(ranks, matrix, p_ij, interval):
+def get_temperature(ranks, matrix, p_ij, interval=(0.01, 20)):
     """
     Calculate the correct scaling for ranks given p_ij
     """
