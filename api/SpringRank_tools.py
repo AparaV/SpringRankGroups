@@ -176,7 +176,7 @@ def SpringRank_groups(A, G, reg_coeff, solver):
     return ranks, scores
 
        
-def SpringRank_planted_network(N, beta, alpha, K, l0=0.5, l1=1., return_ranks=False):
+def SpringRank_planted_network(N, beta, alpha, K, l0=0.5, return_ranks=False):
     '''
 
     Uses the SpringRank generative model to build a directed network.
@@ -205,7 +205,8 @@ def SpringRank_planted_network(N, beta, alpha, K, l0=0.5, l1=1., return_ranks=Fa
     scaled_energy = np.zeros((N, N))
     for i in range(N):
         for j in range(N):
-            energy_ij = 0.5 * np.power(ranks[i] - ranks[j] - l1, 2)
+            displacement = ranks[i] - ranks[j] - 1
+            energy_ij = 0.5 * displacement * displacement
             scaled_energy[i, j] =  np.exp(-beta * energy_ij)
             Z += scaled_energy[i, j]
     c = K*N / Z
